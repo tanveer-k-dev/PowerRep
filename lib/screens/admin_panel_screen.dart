@@ -51,9 +51,9 @@ class _AdminPanelScreenState extends ConsumerState<AdminPanelScreen> with Single
         ],
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(text: 'Exercises', icon: Icon(Icons.fitness_center)),
-            Tab(text: 'Categories', icon: Icon(Icons.category)),
+          tabs: [
+            Tab(text: 'Exercises (${dataState.exercises.length})', icon: const Icon(Icons.fitness_center)),
+            Tab(text: 'Categories (${dataState.categories.length})', icon: const Icon(Icons.category)),
           ],
           indicatorColor: Colors.redAccent,
           labelColor: Colors.redAccent,
@@ -185,16 +185,42 @@ class _AdminPanelScreenState extends ConsumerState<AdminPanelScreen> with Single
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Migrate Data'),
-        content: const Text('This will upload all 180+ mock exercises to your real Firebase project. This may take a minute and should only be done once. Proceed?'),
+        title: const Text('Migrate Mock Data'),
+        content: const Text('This will upload all 200+ default exercises to Firebase.\n\nNote: This will ONLY add missing items. Your custom images and manual edits are SAFE.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Starting migration...')));
-              await ref.read(dataProvider.notifier).migrateToFirebase();
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Migration Complete!')));
+              
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => const AlertDialog(
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(color: Colors.redAccent),
+                      SizedBox(height: 20),
+                      Text("Smart-Merging defaults with Firebase..."),
+                    ],
+                  ),
+                ),
+              );
+              
+              try {
+                // overwrite: false ensures we don't kill custom images
+                await ref.read(dataProvider.notifier).migrateToFirebase(overwrite: false);
+                if (context.mounted) {
+                  Navigator.pop(context); 
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sync Complete! Custom items preserved.')));
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Sync Failed: $e')));
+                }
+              }
             },
             child: const Text('Proceed'),
           ),

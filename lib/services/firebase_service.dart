@@ -93,4 +93,33 @@ class FirebaseService {
   Future<void> deleteCategory(String id) async {
     await _db.collection('categories').doc(id).delete();
   }
+
+  // --- Batch Operations ---
+  Future<void> uploadDataBatch(List<Category> categories, List<Exercise> exercises, List<Map<String, dynamic>> plans, {bool overwrite = false}) async {
+    final batch = _db.batch();
+
+    // To prevent overwriting custom images, we first check what exists
+    final existingExercises = await _db.collection('exercises').get();
+    final existingIds = existingExercises.docs.map((d) => d.id).toSet();
+
+    for (var cat in categories) {
+      final ref = _db.collection('categories').doc(cat.id);
+      batch.set(ref, cat.toJson()); // Categories usually stay same
+    }
+
+    for (var ex in exercises) {
+      if (!overwrite && existingIds.contains(ex.id)) {
+        continue; // Skip existing items to preserve custom images/edits
+      }
+      final ref = _db.collection('exercises').doc(ex.id);
+      batch.set(ref, ex.toJson());
+    }
+
+    for (var plan in plans) {
+      final ref = _db.collection('plans').doc(plan['day']);
+      batch.set(ref, plan);
+    }
+
+    await batch.commit();
+  }
 }

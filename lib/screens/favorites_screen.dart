@@ -16,7 +16,13 @@ class FavoritesScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Favorites'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('My Favorites'),
+            Text("${favoriteExercises.length} Exercises", style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          ],
+        ),
       ),
       body: favoriteExercises.isEmpty
           ? const Center(

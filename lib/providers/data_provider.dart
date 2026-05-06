@@ -18,6 +18,8 @@ class DataState {
   final List<Category> categories;
   final List<WorkoutPlan> plans;
   final List<String> favorites;
+  final List<String> recentlyViewed;
+  final Map<String, int> progress; // exerciseId -> totalRepsDone
   final bool isLoading;
 
   DataState({
@@ -25,6 +27,8 @@ class DataState {
     this.categories = const [],
     this.plans = const [],
     this.favorites = const [],
+    this.recentlyViewed = const [],
+    this.progress = const {},
     this.isLoading = false,
   });
 
@@ -33,6 +37,8 @@ class DataState {
     List<Category>? categories,
     List<WorkoutPlan>? plans,
     List<String>? favorites,
+    List<String>? recentlyViewed,
+    Map<String, int>? progress,
     bool? isLoading,
   }) {
     return DataState(
@@ -40,6 +46,8 @@ class DataState {
       categories: categories ?? this.categories,
       plans: plans ?? this.plans,
       favorites: favorites ?? this.favorites,
+      recentlyViewed: recentlyViewed ?? this.recentlyViewed,
+      progress: progress ?? this.progress,
       isLoading: isLoading ?? this.isLoading,
     );
   }
@@ -47,6 +55,7 @@ class DataState {
 
 class DataNotifier extends Notifier<DataState> {
   static const String _favKey = 'favorite_exercises';
+  static const String _recentKey = 'recently_viewed';
 
   @override
   DataState build() {
@@ -57,6 +66,7 @@ class DataNotifier extends Notifier<DataState> {
   Future<void> loadInitialData() async {
     final prefs = await SharedPreferences.getInstance();
     final favorites = prefs.getStringList(_favKey) ?? [];
+    final recent = prefs.getStringList(_recentKey) ?? [];
     
     final service = ref.read(firebaseServiceProvider);
     try {
@@ -67,6 +77,7 @@ class DataNotifier extends Notifier<DataState> {
         categories: (data['categories'] as List).map((e) => Category.fromJson(e)).toList(),
         plans: (data['plans'] as List).map((e) => WorkoutPlan.fromJson(e)).toList(),
         favorites: favorites,
+        recentlyViewed: recent,
         isLoading: false,
       );
     } catch (e) {
@@ -80,25 +91,45 @@ class DataNotifier extends Notifier<DataState> {
     await loadInitialData();
   }
 
-  // --- MIGRATION TOOL ---
-  Future<void> migrateToFirebase() async {
-    state = state.copyWith(isLoading: true);
-    final mockService = ref.read(mockDataServiceProvider);
-    final firebaseService = ref.read(firebaseServiceProvider);
+  Future<void> addToRecentlyViewed(String exerciseId) async {
+    final newRecent = List<String>.from(state.recentlyViewed);
+    newRecent.remove(exerciseId);
+    newRecent.insert(0, exerciseId);
+    if (newRecent.length > 10) newRecent.removeLast();
     
-    final data = await mockService.fetchAllData();
-    
-    final categories = (data['categories'] as List).map((e) => Category.fromJson(e)).toList();
-    final exercises = (data['exercises'] as List).map((e) => Exercise.fromJson(e)).toList();
+    state = state.copyWith(recentlyViewed: newRecent);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_recentKey, newRecent);
+  }
 
-    for (var cat in categories) {
-      await firebaseService.addCategory(cat);
+  Future<void> trackProgress(String exerciseId, int reps) async {
+    final newProgress = Map<String, int>.from(state.progress);
+    newProgress[exerciseId] = (newProgress[exerciseId] ?? 0) + reps;
+    state = state.copyWith(progress: newProgress);
+  }
+
+  // --- MIGRATION TOOL ---
+  Future<void> migrateToFirebase({bool overwrite = false}) async {
+    try {
+      state = state.copyWith(isLoading: true);
+      final mockService = ref.read(mockDataServiceProvider);
+      final firebaseService = ref.read(firebaseServiceProvider);
+      
+      final data = await mockService.fetchAllData();
+      
+      final categories = (data['categories'] as List).map((e) => Category.fromJson(e)).toList();
+      final exercises = (data['exercises'] as List).map((e) => Exercise.fromJson(e)).toList();
+      final plans = List<Map<String, dynamic>>.from(data['plans']);
+
+      // Upload using Smart Merge by default (only add missing)
+      await firebaseService.uploadDataBatch(categories, exercises, plans, overwrite: overwrite);
+      
+      await loadInitialData();
+    } catch (e) {
+      print('Migration failed: $e');
+      state = state.copyWith(isLoading: false);
+      rethrow;
     }
-    for (var ex in exercises) {
-      await firebaseService.addExercise(ex);
-    }
-    
-    await loadInitialData();
   }
 
   // Exercise Management
