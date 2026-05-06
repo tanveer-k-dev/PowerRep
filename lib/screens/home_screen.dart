@@ -100,7 +100,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   }
                 },
                 loading: () {},
-                error: (_, __) {},
+                error: (err, stack) {},
               );
             },
           ),
